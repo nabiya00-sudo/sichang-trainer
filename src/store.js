@@ -18,6 +18,10 @@ const DEFAULTS = {
   lastCheck: 0,
   sinceCheck: 0, // 마지막 점검 이후 연습 횟수
   checks: [], // 점검 기록
+  goalDays: 5, // 주간 목표 (하루 4분 이상 연습한 날)
+  sessionMin: 15, // 오늘의 연습 길이(분)
+  plan: '', // "언제 연습할지" 계획 문장
+  days: {}, // { 'YYYY-MM-DD': { sec, n } } 날짜별 연습 시간
   intro: 'scale', // 시창 도입: 'scale'(음계) | 'cadence'(화음 진행)
 };
 

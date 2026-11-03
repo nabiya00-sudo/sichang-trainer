@@ -2,7 +2,7 @@ import { env, esc, sleep, footer, playScale } from './ui.js';
 import { ensureCtx, loadPiano, playNote, click } from './audio.js';
 import { startMic, midiName } from './pitch.js';
 import { chooseKey, midiOf, degName } from './melody.js';
-import { scoreNotes, isHit, centsText, makeTrace } from './sing.js';
+import { scoreNotes, isHit, centsText, makeTrace, meanAbsCents } from './sing.js';
 import { advance } from './progress.js';
 import { save } from './store.js';
 
@@ -58,6 +58,8 @@ export function runMatch(opts) {
   let mic = null;
   let raf = 0;
   let dead = false;
+  const startedAt = Date.now();
+  const allResults = []; // 평균 음정 오차 계산용
   env.stop = () => { dead = true; cancelAnimationFrame(raf); mic && mic.stop(); mic = null; };
 
   app.innerHTML = `
@@ -152,6 +154,7 @@ export function runMatch(opts) {
     bigEl.textContent = '';
     const results = scoreNotes(frames, notes, singStart, beat, S.latency, S.octaveStrict);
     tr.draw(frames, singStart, beat, S.latency, true);
+    allResults.push(...results);
     const hits = results.filter(isHit).length;
     q('#syl').innerHTML = trial.degs.map((d, i) => `<span class="${isHit(results[i]) ? 'good' : 'bad'}">${degName(d)}</span>`).join('  ');
     q('#msg').innerHTML = `<b>${hits}/${results.length} 적중</b> — ${results.map((r) => centsText(r)).join(' / ')}`;
@@ -169,13 +172,19 @@ export function runMatch(opts) {
     const total = trials.reduce((a, t) => a + t.total, 0);
     const rate = total ? hits / total : 0;
     if (opts.onFinish) { opts.onFinish({ trials, rate, hits, total }); return; }
-    const note = advance(S, 'match', rate);
+    const note = advance(S, 'match', rate, { sec: (Date.now() - startedAt) / 1000, err: meanAbsCents(allResults) });
     save(S);
+    const err = meanAbsCents(allResults);
+    const buttons = opts.cont
+      ? `<div class="row"><button class="primary" id="cont">${esc(opts.cont.label)}</button><button id="home">그만하기</button></div>`
+      : '<div class="row"><button class="primary" id="again">한 번 더</button><button id="home">홈으로</button></div>';
     app.innerHTML = `
       <h1>따라 부르기 결과</h1>
-      <div class="card"><h2>${hits}/${total} 적중 (${Math.round(rate * 100)}%)</h2><p>${esc(note)}</p></div>
-      <div class="row"><button class="primary" id="again">한 번 더</button><button id="home">홈으로</button></div>${footer}`;
-    app.querySelector('#again').onclick = () => env.show(runMatch, { lvIdx: S.match.level - 1 });
+      <div class="card"><h2>${hits}/${total} 적중 (${Math.round(rate * 100)}%)</h2><p>${esc(note)}</p>
+        ${err === null ? '' : `<p class="sub">평균 음정 오차 ${Math.round(err)}¢ (100¢ = 반음)</p>`}</div>
+      ${buttons}${footer}`;
+    if (opts.cont) app.querySelector('#cont').onclick = opts.cont.fn;
+    else app.querySelector('#again').onclick = () => env.show(runMatch, { lvIdx: S.match.level - 1 });
     app.querySelector('#home').onclick = () => env.show(env.home);
   }
 }

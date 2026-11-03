@@ -54,4 +54,22 @@ select { font: inherit; color: var(--text); background: #2b3140; border: 1px sol
 .kb .no { background: var(--bad) !important; color: #fff !important; }
 .kb .ok { background: var(--good) !important; color: #0b2416 !important; }
 .kb button:disabled { opacity: 1; cursor: default; }
+input[type=text] { font: inherit; color: var(--text); background: #2b3140; border: 1px solid var(--line); border-radius: 10px; padding: 12px; width: 100%; }
+.dots { display: flex; gap: 6px; margin: 10px 0; }
+.dot { flex: 1; text-align: center; padding: 10px 0; border-radius: 10px; background: #2b3140; color: var(--sub); font-size: 13px; border: 1px solid transparent; }
+.dot.on { background: var(--accent); color: #1b1405; font-weight: 700; }
+.dot.today { border-color: var(--text); }
+.dot.future { opacity: 0.45; }
+.chips { display: flex; gap: 8px; margin: 12px 0 8px; }
+.chip { flex: 1; min-height: 40px; padding: 8px 0; }
+.chip.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.plan .row > input { flex: 3 1 160px; } .plan .row > button { flex: 1 1 60px; }
+.calhead, .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.calhead span { text-align: center; font-size: 12px; color: var(--sub); }
+.cal { margin-top: 5px; }
+.cell { aspect-ratio: 1; border-radius: 8px; background: #2b3140; font-size: 12px; display: flex; align-items: center; justify-content: center; color: var(--sub); border: 1px solid transparent; }
+.cell.part { background: #5a4a22; color: #ffe2a3; }
+.cell.on { background: var(--accent); color: #1b1405; font-weight: 700; }
+.cell.today { border-color: var(--text); }
+.cell.future { opacity: 0.35; }
 footer { color: var(--sub); font-size: 12px; margin-top: 24px; line-height: 1.5; }

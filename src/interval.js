@@ -40,6 +40,7 @@ export function runInterval(opts) {
   const next = opts.next || ((i) => (i < count ? { lvIdx: opts.lvIdx } : null));
   const title = opts.title || `음 간격 맞히기 · ${IV_LEVELS[opts.lvIdx ?? 0].name}`;
   let dead = false;
+  const startedAt = Date.now();
   env.stop = () => { dead = true; };
 
   app.innerHTML = `
@@ -146,13 +147,17 @@ export function runInterval(opts) {
     const hits = results.filter((r) => r.correct).length;
     const rate = results.length ? hits / results.length : 0;
     if (opts.onFinish) { opts.onFinish({ results, rate, hits, total: results.length }); return; }
-    const note = advance(S, 'interval', rate);
+    const note = advance(S, 'interval', rate, { sec: (Date.now() - startedAt) / 1000 });
     save(S);
+    const buttons = opts.cont
+      ? `<div class="row"><button class="primary" id="cont">${esc(opts.cont.label)}</button><button id="home">그만하기</button></div>`
+      : '<div class="row"><button class="primary" id="again">한 번 더</button><button id="home">홈으로</button></div>';
     app.innerHTML = `
       <h1>음 간격 맞히기 결과</h1>
       <div class="card"><h2>${hits}/${results.length} 정답 (${Math.round(rate * 100)}%)</h2><p>${esc(note)}</p></div>
-      <div class="row"><button class="primary" id="again">한 번 더</button><button id="home">홈으로</button></div>${footer}`;
-    app.querySelector('#again').onclick = () => env.show(runInterval, { lvIdx: S.interval.level - 1 });
+      ${buttons}${footer}`;
+    if (opts.cont) app.querySelector('#cont').onclick = opts.cont.fn;
+    else app.querySelector('#again').onclick = () => env.show(runInterval, { lvIdx: S.interval.level - 1 });
     app.querySelector('#home').onclick = () => env.show(env.home);
   }
 }

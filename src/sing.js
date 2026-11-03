@@ -22,6 +22,12 @@ export function scoreNotes(frames, notes, singStart, beat, latency, strict) {
 
 export const isHit = (r) => r.state !== 'miss';
 
+// 소리가 잡힌 음들의 평균 음정 오차(센트, 절댓값). 하나도 없으면 null.
+export function meanAbsCents(results) {
+  const v = results.filter((r) => r.cents !== null).map((r) => Math.abs(r.cents));
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+}
+
 // 결과 표 한 줄 문구
 export function centsText(r) {
   if (r.cents === null) return '소리 없음';

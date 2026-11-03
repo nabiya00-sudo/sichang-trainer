@@ -1,3 +1,5 @@
+import { logPractice } from './habit.js';
+
 // 기술별 레벨 관리. sing 은 예전 기록과 호환되도록 S.level / S.streak 를 그대로 쓴다.
 export const SKILLS = {
   match: { name: '따라 부르기', max: 6 },
@@ -14,7 +16,8 @@ export function recentRate(S, skill) {
 }
 
 // 적중률 80% 이상 2회 연속 → 레벨 업, 50% 미만 → 레벨 다운. 안내 문구를 돌려준다.
-export function advance(S, skill, rate) {
+// extra: { sec: 이 훈련에 걸린 시간(초), err: 평균 음정 오차(센트) }
+export function advance(S, skill, rate, extra = {}) {
   const max = SKILLS[skill].max;
   const st = skill === 'sing' ? { level: S.level, streak: S.streak } : S[skill];
   const before = st.level;
@@ -46,13 +49,15 @@ export function advance(S, skill, rate) {
     S.level = st.level;
     S.streak = st.streak;
   }
-  S.history.push({ t: Date.now(), skill, level: before, rate });
+  const entry = { t: Date.now(), skill, level: before, rate };
+  if (extra.err !== undefined && extra.err !== null) entry.err = Math.round(extra.err);
+  S.history.push(entry);
   S.history = S.history.slice(-400);
-  S.sinceCheck = (S.sinceCheck || 0) + 1;
+  logPractice(S, Math.min(1200, extra.sec || 0));
   return note;
 }
 
-// 재점검 시기: 마지막 점검 후 10회 연습 또는 14일.
+// 재점검 시기: 마지막 점검 후 10일 연습(하루 4분 이상) 또는 14일.
 export function checkDue(S) {
   if (!S.placed) return true;
   return S.sinceCheck >= 10 || Date.now() - S.lastCheck > 14 * 24 * 3600 * 1000;

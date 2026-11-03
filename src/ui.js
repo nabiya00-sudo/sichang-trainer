@@ -2,7 +2,7 @@ import { ensureCtx, playNote } from './audio.js';
 import { midiOf } from './melody.js';
 
 // 화면 모듈들이 함께 쓰는 상태. main.js 가 채워 넣는다.
-export const env = { app: null, S: null, stop: null, show: null, home: null, rangeTest: null };
+export const env = { app: null, S: null, stop: null, show: null, home: null, rangeTest: null, session: null };
 
 export const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

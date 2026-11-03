@@ -7,7 +7,9 @@ import { renderScore } from './notation.js';
 import { TERMS, termsUpTo, termsAt } from './terms.js';
 import { env, esc, sleep, footer, playScale } from './ui.js';
 import { SKILLS, levelOf, recentRate, advance, checkDue } from './progress.js';
-import { scoreNotes, isHit, centsText } from './sing.js';
+import { scoreNotes, isHit, centsText, meanAbsCents } from './sing.js';
+import { startDaily } from './daily.js';
+import { weekInfo, streak, secToday, MIN_SEC } from './habit.js';
 import { runMatch, MATCH_LEVELS } from './match.js';
 import { runInterval, IV_LEVELS } from './interval.js';
 import { checkScreen } from './check.js';
@@ -52,21 +54,39 @@ function home() {
   const card = (k) => {
     const r = recentRate(S, k);
     return `<div class="card">
-      <span class="pill">${SKILLS[k].name} · Lv${levelOf(S, k)} / ${SKILLS[k].max}</span>${rec === k && S.placed ? ' <span class="pill rec">오늘의 추천</span>' : ''}
+      <span class="pill">${SKILLS[k].name} · Lv${levelOf(S, k)} / ${SKILLS[k].max}</span>${rec === k && S.placed ? ' <span class="pill rec">가장 약한 기술</span>' : ''}
       <h2 style="margin-top:8px">${esc(LEVEL_NAME[k](S))}</h2>
       <p class="sub">${SKILL_DESC[k]}</p>
       <p class="sub">최근 5회 평균 ${r === null ? '-' : Math.round(r * 100) + '%'}</p>
-      <button class="${rec === k && S.placed ? 'primary' : ''}" id="go-${k}" style="width:100%">${SKILLS[k].name} 시작</button>
+      <button id="go-${k}" style="width:100%">${SKILLS[k].name}만 하기</button>
     </div>`;
   };
+  const week = weekInfo(S);
+  const todaySec = secToday(S);
+  const todayDone = todaySec >= MIN_SEC;
+  const st = streak(S);
+  const dots = week.days.map((d) => `<div class="dot ${d.counted ? 'on' : ''} ${d.today ? 'today' : ''} ${d.future ? 'future' : ''}"><span>${d.label}</span></div>`).join('');
+  const mins = [5, 10, 15, 20];
   app.innerHTML = `
     <h1>시창 트레이너</h1>
     ${!S.placed ? `<div class="card hl"><h2>처음이시네요! 레벨 진단부터 해 보세요</h2>
       <p>약 5분 동안 지금 실력을 확인해 내게 맞는 시작 단계를 정합니다.</p>
       <button class="primary" id="check" style="width:100%">레벨 진단 시작</button></div>` : ''}
     ${due && S.placed ? `<div class="card hl"><h2>수준 점검 시기입니다</h2>
-      <p>${S.sinceCheck >= 10 ? `마지막 점검 후 ${S.sinceCheck}회 연습했습니다.` : '마지막 점검 후 2주가 지났습니다.'} 짧게(약 5분) 다시 측정해 레벨을 맞춥니다.</p>
+      <p>${S.sinceCheck >= 10 ? `마지막 점검 후 ${S.sinceCheck}일 연습했습니다.` : '마지막 점검 후 2주가 지났습니다.'} 짧게(약 5분) 다시 측정해 레벨을 맞춥니다.</p>
       <button class="primary" id="check" style="width:100%">수준 점검 시작</button></div>` : ''}
+    <div class="card ${todayDone ? '' : 'hl'}">
+      <h2>오늘의 연습 ${todayDone ? '<span class="good">✓ 완료</span>' : ''}</h2>
+      <div class="dots">${dots}</div>
+      <p>이번 주 <b>${week.done} / ${S.goalDays}일</b>${week.done >= S.goalDays ? ' — 목표 달성!' : ''} <span class="sub">· 연속 ${st}일 · 오늘 ${Math.round(todaySec / 60)}분</span></p>
+      ${S.plan ? `<p class="sub">내 연습 시간: ${esc(S.plan)}</p>` : `<div class="plan"><label>언제 연습할지 정해 보세요 (예: 저녁 먹은 뒤 태블릿 앞에서)</label>
+        <div class="row"><input type="text" id="planin" maxlength="60" placeholder="나는 ___할 때 연습한다" /><button id="plansave">저장</button></div>
+        <p class="sub">알림은 갤럭시 탭의 시계 앱 → 알람에서 연습 시간·요일을 반복으로 설정해 두세요.</p></div>`}
+      <div class="chips">${mins.map((m) => `<button class="chip ${S.sessionMin === m ? 'on' : ''}" data-min="${m}">${m}분</button>`).join('')}</div>
+      <button class="primary" id="daily" style="width:100%">오늘의 연습 시작 (${S.sessionMin}분)</button>
+      <button id="mini" style="width:100%;margin-top:8px">5분 미니 연습 (바쁜 날)</button>
+    </div>
+    <h2 style="margin-top:18px">훈련 하나만 하기</h2>
     ${['match', 'interval', 'sing'].map(card).join('')}
     <p class="sub">내 음역: ${midiName(S.range.low)} ~ ${midiName(S.range.high)} ${S.rangeMeasured ? '' : '(기본값 — 음역 측정이 필요합니다)'}</p>
     <div class="row">
@@ -79,6 +99,10 @@ function home() {
     </div>
     <div class="card">
       <h2>설정</h2>
+      <label>주간 목표 (하루 4분 이상 연습한 날)</label>
+      <select id="goal">${[3, 4, 5, 6, 7].map((n) => `<option value="${n}" ${S.goalDays === n ? 'selected' : ''}>주 ${n}일</option>`).join('')}</select>
+      <label>내 연습 시간 (언제 할지)</label>
+      <input type="text" id="plan" maxlength="60" value="${esc(S.plan)}" placeholder="나는 ___할 때 연습한다" />
       <label>속도: <b id="tv">${S.tempo}</b> BPM</label>
       <input type="range" id="tempo" min="44" max="100" value="${S.tempo}" />
       <label>마이크 지연 보정: <b id="lv">${Math.round(S.latency * 1000)}</b> ms (결과가 계속 늦게/빨리 나오면 조정)</label>
@@ -100,6 +124,22 @@ function home() {
   const q = (s) => app.querySelector(s);
   ['match', 'interval', 'sing'].forEach((k) => { q(`#go-${k}`).onclick = startFn[k]; });
   if (q('#check')) q('#check').onclick = () => show(checkScreen);
+  q('#daily').onclick = () => startDaily(S.sessionMin);
+  q('#mini').onclick = () => startDaily(5);
+  app.querySelectorAll('.chip').forEach((b) => {
+    b.onclick = () => { S.sessionMin = +b.dataset.min; save(S); show(home); };
+  });
+  if (q('#plansave')) {
+    q('#plansave').onclick = () => {
+      const v = q('#planin').value.trim();
+      if (!v) return;
+      S.plan = v;
+      save(S);
+      show(home);
+    };
+  }
+  q('#goal').onchange = (e) => { S.goalDays = +e.target.value; save(S); show(home); };
+  q('#plan').onchange = (e) => { S.plan = e.target.value.trim(); save(S); };
   q('#range').onclick = () => show(rangeTest);
   q('#terms').onclick = () => show(termsScreen);
   q('#stats').onclick = () => show(statsScreen);
@@ -164,6 +204,21 @@ function statsScreen() {
     return `<div class="card"><h2>${SKILLS[k].name} · 현재 Lv${levelOf(S, k)}</h2>
       ${last.length ? `${spark(last.map((x) => x.rate))}<p class="sub">최근 ${last.length}회 (막대 높이 = 적중률) · 총 ${h.length}회 연습</p>` : '<p class="sub">아직 기록이 없습니다.</p>'}</div>`;
   };
+  // 최근 4주 달력 (월~일), 하루 4분 이상 연습한 날이 주황색
+  const weeks = [3, 2, 1, 0].map((o) => weekInfo(S, o));
+  const cal = `<div class="cal">${weeks.map((w) => w.days.map((d) => `<div class="cell ${d.counted ? 'on' : d.sec > 0 ? 'part' : ''} ${d.today ? 'today' : ''} ${d.future ? 'future' : ''}" title="${d.key} · ${Math.round(d.sec / 60)}분">${d.sec ? Math.max(1, Math.round(d.sec / 60)) : ''}</div>`).join('')).join('')}</div>`;
+  const total4 = weeks.reduce((a, w) => a + w.done, 0);
+  // 음정 오차 추이: 최근 5회 vs 그 이전 5회 (따라 부르기·시창)
+  const errs = S.history.filter((x) => x.err !== undefined).map((x) => x.err);
+  const recent = errs.slice(-5);
+  const before = errs.slice(-10, -5);
+  const avg = (a) => Math.round(a.reduce((x, y) => x + y, 0) / a.length);
+  const errCard = errs.length
+    ? `<div class="card"><h2>음정 오차 추이 (작을수록 정확)</h2>
+        <p>최근 ${recent.length}회 평균 <b>${avg(recent)}¢</b>${before.length ? ` · 그 이전 ${before.length}회 <b>${avg(before)}¢</b> ${avg(recent) < avg(before) ? '<span class="good">▼ 좋아졌어요</span>' : avg(recent) > avg(before) ? '<span class="bad">▲ 늘었어요</span>' : ''}` : ''}</p>
+        ${spark(errs.slice(-20).map((e) => Math.max(0.04, 1 - Math.min(e, 100) / 100)))}
+        <p class="sub">막대가 높을수록 오차가 작습니다. 100¢ = 반음. 따라 부르기와 시창을 합친 값입니다.</p></div>`
+    : '';
   const rows = SOLFEGE.map((n) => {
     const d = S.degree[n] || { n: 0, h: 0 };
     const pct = d.n ? Math.round((d.h / d.n) * 100) : null;
@@ -174,6 +229,10 @@ function statsScreen() {
     .join('');
   app.innerHTML = `
     <h1>기록</h1>
+    <div class="card"><h2>최근 4주 연습 달력</h2>
+      <div class="calhead">${['월', '화', '수', '목', '금', '토', '일'].map((d) => `<span>${d}</span>`).join('')}</div>${cal}
+      <p class="sub">숫자는 그날 연습 분. 4분 이상이면 주황색(연습한 날). 최근 4주 중 <b>${total4}일</b> 연습했습니다.</p></div>
+    ${errCard}
     ${['match', 'interval', 'sing'].map(skillBlock).join('')}
     <div class="card"><h2>점검 기록 (시작 레벨)</h2>
       ${checks ? `<table><tr><th>날짜</th><th>음 간격</th><th>따라 부르기</th><th>시창</th></tr>${checks}</table>` : '<p class="sub">아직 점검 기록이 없습니다. 홈에서 레벨 진단을 해 보세요.</p>'}
@@ -182,7 +241,6 @@ function statsScreen() {
     <button id="back">홈으로</button>${footer}`;
   app.querySelector('#back').onclick = () => show(home);
 }
-
 
 /* ---------------------------------------------------------------- 음역 측정 */
 function rangeTest(after) {
@@ -242,7 +300,10 @@ function rangeTest(after) {
 }
 
 /* ---------------------------------------------------------------- 시창 */
-function session() {
+// opts: { count?: 한 번에 부를 선율 수, done?: 지금까지 끝낸 수, cont?: {label, fn}, title? } (오늘의 연습에서 사용)
+function session(opts = {}) {
+  const done = opts.done || 0;
+  const startedAt = Date.now();
   const lv = LEVELS[S.level - 1];
   const mel = generate(lv);
   // 음역 안쪽으로 한 걸음 들여서 가장자리 음을 피한다.
@@ -255,7 +316,7 @@ function session() {
   if (newTerms.length) { S.seenLevels.push(S.level); save(S); }
 
   app.innerHTML = `
-    <p><span class="pill">Lv${S.level} ${esc(lv.name)}</span> <span class="pill">${key.name}장조 · ${S.tempo}BPM</span></p>
+    <p>${opts.title ? `<span class="pill rec">${esc(opts.title)}${opts.count ? ` · ${done + 1}/${opts.count}` : ''}</span> ` : ''}<span class="pill">시창 Lv${S.level} ${esc(lv.name)}</span> <span class="pill">${key.name}장조 · ${S.tempo}BPM</span></p>
     ${newTerms.length ? `<div class="card"><h2>새 용어</h2>${newTerms.map((t) => `<p><b>${esc(t.title)}</b> — ${esc(t.body)}</p>`).join('')}</div>` : ''}
     <div class="score" id="score"></div>
     <div class="big" id="big"></div>
@@ -346,6 +407,7 @@ function session() {
       q('#msg').textContent = '기준음 → 카운트 → 노래하세요.';
       const t0 = cad.end + 0.2; // 카운트인 시작
       const singStart = t0 + 4 * beat;
+      if (import.meta.env.DEV) window.__trial = { notes: mel.notes.map((n, i) => ({ target: midiOf(key, n.deg), start: starts[i], beats: n.beats })), singStart, beat }; // 개발 중 자동 시험용
       for (let i = 0; i < 4; i++) click(t0 + i * beat, i === 0, 0.5);
       for (let i = 0; i < total; i++) click(singStart + i * beat, i % 4 === 0, 0.22);
       const frames = [];
@@ -406,8 +468,10 @@ function session() {
       S.degree[name] = d;
     });
 
-    const note = advance(S, 'sing', rate);
+    const note = advance(S, 'sing', rate, { sec: (Date.now() - startedAt) / 1000, err: meanAbsCents(results) });
     save(S);
+    const more = opts.count && done + 1 < opts.count;
+    const nextLabel = more ? `다음 문제 (${done + 2}/${opts.count})` : opts.cont ? opts.cont.label : '다음 문제';
 
     const rows = mel.notes.map((n, i) => {
       const r = results[i];
@@ -418,7 +482,7 @@ function session() {
     panel.innerHTML = `
       <div class="card"><table><tr><th>음</th><th>계이름</th><th>음정 차이</th></tr>${rows}</table>
       <p class="sub">±25¢ 이내 초록 · ±50¢ 이내 노랑 · 그 밖 빨강 (100¢ = 반음, ${S.octaveStrict ? '옥타브가 다르면 빨강' : '옥타브는 무시'})</p></div>
-      <div class="row"><button id="hear">정답 듣기</button><button class="primary" id="next">다음 문제</button></div>`;
+      <div class="row"><button id="hear">정답 듣기</button><button class="primary" id="next">${esc(nextLabel)}</button></div>`;
     q('#ctl').remove(); // 시작 버튼 줄 제거
     q('#msg').after(panel);
     q('#hear').onclick = async () => {
@@ -426,7 +490,11 @@ function session() {
       await loadPiano();
       playMelody(mel, key, ensureCtx().currentTime + 0.1, beat);
     };
-    q('#next').onclick = () => show(session);
+    q('#next').onclick = () => {
+      if (more) show(session, { ...opts, done: done + 1 });
+      else if (opts.cont) opts.cont.fn();
+      else show(session);
+    };
   }
 }
 
@@ -460,4 +528,5 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
 }
 env.home = home;
 env.rangeTest = rangeTest;
+env.session = session;
 show(home);
