@@ -9,6 +9,7 @@
   --bad: #ef5b5b;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
 html, body { margin: 0; background: var(--bg); color: var(--text);
   font-family: system-ui, -apple-system, 'Noto Sans KR', 'Malgun Gothic', sans-serif; }
 #app { max-width: 820px; margin: 0 auto; padding: 16px 16px calc(24px + env(safe-area-inset-bottom)); }
@@ -37,4 +38,20 @@ table { width: 100%; border-collapse: collapse; font-size: 15px; }
 td, th { padding: 6px 4px; text-align: center; border-bottom: 1px solid var(--line); }
 label { display: block; margin: 10px 0 2px; font-size: 14px; color: var(--sub); }
 input[type=range] { width: 100%; }
+select { font: inherit; color: var(--text); background: #2b3140; border: 1px solid var(--line); border-radius: 10px; padding: 12px; width: 100%; }
+.card.hl { border-color: var(--accent); }
+.pill.rec { background: var(--accent); color: #1b1405; font-weight: 700; }
+.syl { font-size: 30px; font-weight: 800; text-align: center; min-height: 44px; letter-spacing: 4px; margin: 6px 0; }
+.spark { display: flex; align-items: flex-end; gap: 3px; height: 70px; }
+.spark i { flex: 1; background: var(--accent); border-radius: 3px 3px 0 0; min-width: 4px; }
+.kb { position: relative; height: 190px; margin: 12px 0; user-select: none; touch-action: manipulation; }
+.kb button { position: absolute; top: 0; margin: 0; min-height: 0; padding: 0; }
+.kb .wk { height: 100%; background: #f4f1e8; color: #1d2230; border: 1px solid #8a8f9a; border-radius: 0 0 10px 10px;
+  display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding-bottom: 10px; font-weight: 700; font-size: 17px; }
+.kb .wk small { font-size: 11px; color: #6b7280; font-weight: 500; }
+.kb .bk { height: 62%; background: #1c1f27; border: 1px solid #000; border-radius: 0 0 8px 8px; z-index: 2; }
+.kb .sel { background: var(--accent) !important; }
+.kb .no { background: var(--bad) !important; color: #fff !important; }
+.kb .ok { background: var(--good) !important; color: #0b2416 !important; }
+.kb button:disabled { opacity: 1; cursor: default; }
 footer { color: var(--sub); font-size: 12px; margin-top: 24px; line-height: 1.5; }

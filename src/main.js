@@ -5,40 +5,73 @@ import { startMic, midiName, median } from './pitch.js';
 import { LEVELS, generate, chooseKey, midiOf, degName, SOLFEGE } from './melody.js';
 import { renderScore } from './notation.js';
 import { TERMS, termsUpTo, termsAt } from './terms.js';
+import { env, esc, sleep, footer, playScale } from './ui.js';
+import { SKILLS, levelOf, recentRate, advance, checkDue } from './progress.js';
+import { scoreNotes, isHit, centsText } from './sing.js';
+import { runMatch, MATCH_LEVELS } from './match.js';
+import { runInterval, IV_LEVELS } from './interval.js';
+import { checkScreen } from './check.js';
 
 const app = document.getElementById('app');
 let S = load();
-let stopCurrent = null; // cleanup hook of the active screen (mic, animation frames)
-
-const ATTRIBUTION = 'Piano: Salamander Grand Piano (Alexander Holm, CC BY 3.0)';
-const footer = `<footer>${ATTRIBUTION}</footer>`;
+env.app = app;
+env.S = S;
 
 function show(fn, ...args) {
-  if (stopCurrent) stopCurrent();
-  stopCurrent = null;
+  if (env.stop) env.stop();
+  env.stop = null;
   window.scrollTo(0, 0);
   fn(...args);
 }
+env.show = show;
 
-const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const LEVEL_NAME = {
+  match: (s) => MATCH_LEVELS[s.match.level - 1].name,
+  interval: (s) => IV_LEVELS[s.interval.level - 1].name,
+  sing: (s) => LEVELS[s.level - 1].name,
+};
+const SKILL_DESC = {
+  match: '피아노 음을 듣고 같은 음을 노래합니다. 실시간 그래프로 바로 확인.',
+  interval: '두 음을 듣고 화면 건반에서 순서대로 고릅니다. 코드 따기의 기초.',
+  sing: '악보를 보고 계이름으로 노래합니다.',
+};
+
+// 가장 낮은 레벨 비율의 기술을 오늘의 연습으로 추천한다.
+function recommend() {
+  const order = ['match', 'interval', 'sing'];
+  return order.reduce((best, k) => (
+    (levelOf(S, k) - 1) / (SKILLS[k].max - 1) < (levelOf(S, best) - 1) / (SKILLS[best].max - 1) ? k : best
+  ), 'match');
+}
 
 /* ---------------------------------------------------------------- 홈 */
 function home() {
-  const lv = LEVELS[S.level - 1];
-  const recent = S.history.slice(-10);
-  const avg = recent.length ? Math.round((recent.reduce((a, h) => a + h.rate, 0) / recent.length) * 100) : null;
+  const rec = recommend();
+  const due = S.placed && checkDue(S);
+  const startFn = { match: () => show(runMatch, { lvIdx: S.match.level - 1 }), interval: () => show(runInterval, { lvIdx: S.interval.level - 1 }), sing: () => show(session) };
+  const card = (k) => {
+    const r = recentRate(S, k);
+    return `<div class="card">
+      <span class="pill">${SKILLS[k].name} · Lv${levelOf(S, k)} / ${SKILLS[k].max}</span>${rec === k && S.placed ? ' <span class="pill rec">오늘의 추천</span>' : ''}
+      <h2 style="margin-top:8px">${esc(LEVEL_NAME[k](S))}</h2>
+      <p class="sub">${SKILL_DESC[k]}</p>
+      <p class="sub">최근 5회 평균 ${r === null ? '-' : Math.round(r * 100) + '%'}</p>
+      <button class="${rec === k && S.placed ? 'primary' : ''}" id="go-${k}" style="width:100%">${SKILLS[k].name} 시작</button>
+    </div>`;
+  };
   app.innerHTML = `
     <h1>시창 트레이너</h1>
-    <div class="card">
-      <span class="pill">현재 레벨 ${S.level} / ${LEVELS.length}</span>
-      <h2 style="margin-top:8px">${esc(lv.name)}</h2>
-      <p class="sub">최근 ${recent.length}회 평균 적중률 ${avg === null ? '-' : avg + '%'} · 연속 성공 ${S.streak}/2</p>
-      <p class="sub">내 음역: ${midiName(S.range.low)} ~ ${midiName(S.range.high)} ${S.rangeMeasured ? '' : '(기본값 — 먼저 음역 측정을 권장)'}</p>
-    </div>
+    ${!S.placed ? `<div class="card hl"><h2>처음이시네요! 레벨 진단부터 해 보세요</h2>
+      <p>약 5분 동안 지금 실력을 확인해 내게 맞는 시작 단계를 정합니다.</p>
+      <button class="primary" id="check" style="width:100%">레벨 진단 시작</button></div>` : ''}
+    ${due && S.placed ? `<div class="card hl"><h2>수준 점검 시기입니다</h2>
+      <p>${S.sinceCheck >= 10 ? `마지막 점검 후 ${S.sinceCheck}회 연습했습니다.` : '마지막 점검 후 2주가 지났습니다.'} 짧게(약 5분) 다시 측정해 레벨을 맞춥니다.</p>
+      <button class="primary" id="check" style="width:100%">수준 점검 시작</button></div>` : ''}
+    ${['match', 'interval', 'sing'].map(card).join('')}
+    <p class="sub">내 음역: ${midiName(S.range.low)} ~ ${midiName(S.range.high)} ${S.rangeMeasured ? '' : '(기본값 — 음역 측정이 필요합니다)'}</p>
     <div class="row">
-      <button class="primary" id="go">시창 시작</button>
       <button id="range">음역 측정</button>
+      ${S.placed && !due ? '<button id="check">수준 점검</button>' : ''}
     </div>
     <div class="row" style="margin-top:10px">
       <button id="terms">용어 사전</button>
@@ -54,6 +87,8 @@ function home() {
         <input type="checkbox" id="oct" ${S.octaveStrict ? 'checked' : ''} style="width:22px;height:22px" />
         옥타브까지 정확히 채점 (내 음역에서 부르기, 권장)
       </label>
+      <label>시창 시작 전 소리</label>
+      <select id="intro"><option value="scale" ${S.intro === 'scale' ? 'selected' : ''}>음계 (도레미파솔라시도)</option><option value="cadence" ${S.intro === 'cadence' ? 'selected' : ''}>화음 진행 (도-파-솔-도)</option></select>
       <div class="row" style="margin-top:12px">
         <button id="exp" class="ghost">기록 백업(내보내기)</button>
         <button id="imp" class="ghost">백업 불러오기</button>
@@ -62,36 +97,43 @@ function home() {
     </div>
     <p class="sub">이어폰을 끼고 연습하면 피아노 소리가 마이크에 섞이지 않아 정확합니다.</p>
     ${footer}`;
-  app.querySelector('#go').onclick = () => show(session);
-  app.querySelector('#range').onclick = () => show(rangeTest);
-  app.querySelector('#terms').onclick = () => show(termsScreen);
-  app.querySelector('#stats').onclick = () => show(statsScreen);
-  app.querySelector('#tempo').oninput = (e) => {
+  const q = (s) => app.querySelector(s);
+  ['match', 'interval', 'sing'].forEach((k) => { q(`#go-${k}`).onclick = startFn[k]; });
+  if (q('#check')) q('#check').onclick = () => show(checkScreen);
+  q('#range').onclick = () => show(rangeTest);
+  q('#terms').onclick = () => show(termsScreen);
+  q('#stats').onclick = () => show(statsScreen);
+  q('#tempo').oninput = (e) => {
     S.tempo = +e.target.value;
-    app.querySelector('#tv').textContent = S.tempo;
+    q('#tv').textContent = S.tempo;
     save(S);
   };
-  app.querySelector('#lat').oninput = (e) => {
+  q('#lat').oninput = (e) => {
     S.latency = +e.target.value / 1000;
-    app.querySelector('#lv').textContent = e.target.value;
+    q('#lv').textContent = e.target.value;
     save(S);
   };
-  app.querySelector('#oct').onchange = (e) => {
+  q('#oct').onchange = (e) => {
     S.octaveStrict = e.target.checked;
     save(S);
   };
-  app.querySelector('#exp').onclick = () => {
+  q('#intro').onchange = (e) => {
+    S.intro = e.target.value;
+    save(S);
+  };
+  q('#exp').onclick = () => {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([exportJson(S)], { type: 'application/json' }));
     a.download = `sichang-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
-  const file = app.querySelector('#file');
-  app.querySelector('#imp').onclick = () => file.click();
+  const file = q('#file');
+  q('#imp').onclick = () => file.click();
   file.onchange = async () => {
     try {
       S = importJson(await file.files[0].text());
+      env.S = S;
       save(S);
       show(home);
     } catch (e) {
@@ -106,34 +148,44 @@ function termsScreen() {
   const locked = TERMS.length - open.length;
   app.innerHTML = `
     <h1>용어 사전</h1>
-    <p class="sub">레벨이 오르면 새 용어가 열립니다. (잠긴 용어 ${locked}개)</p>
+    <p class="sub">시창 레벨이 오르면 새 용어가 열립니다. (잠긴 용어 ${locked}개)</p>
     ${open.map((t) => `<div class="card"><h2>${esc(t.title)}</h2><p>${esc(t.body)}</p></div>`).join('')}
     <button id="back">홈으로</button>${footer}`;
   app.querySelector('#back').onclick = () => show(home);
 }
 
 /* ---------------------------------------------------------------- 기록 */
+const spark = (rates) => `<div class="spark">${rates.map((r) => `<i style="height:${Math.max(4, Math.round(r * 100))}%" title="${Math.round(r * 100)}%"></i>`).join('')}</div>`;
+
 function statsScreen() {
+  const skillBlock = (k) => {
+    const h = S.history.filter((x) => (x.skill || 'sing') === k);
+    const last = h.slice(-20);
+    return `<div class="card"><h2>${SKILLS[k].name} · 현재 Lv${levelOf(S, k)}</h2>
+      ${last.length ? `${spark(last.map((x) => x.rate))}<p class="sub">최근 ${last.length}회 (막대 높이 = 적중률) · 총 ${h.length}회 연습</p>` : '<p class="sub">아직 기록이 없습니다.</p>'}</div>`;
+  };
   const rows = SOLFEGE.map((n) => {
     const d = S.degree[n] || { n: 0, h: 0 };
     const pct = d.n ? Math.round((d.h / d.n) * 100) : null;
     return `<div>${n}</div><div class="bar"><i style="width:${pct ?? 0}%"></i></div><div class="sub">${pct === null ? '-' : pct + '%'}</div>`;
   }).join('');
-  const hist = S.history.slice(-15).reverse()
-    .map((h) => `<tr><td>${new Date(h.t).toLocaleDateString('ko-KR')}</td><td>Lv${h.level}</td><td>${Math.round(h.rate * 100)}%</td></tr>`)
+  const checks = S.checks.slice(-6).reverse()
+    .map((c) => `<tr><td>${new Date(c.t).toLocaleDateString('ko-KR')}</td><td>Lv${c.interval}</td><td>Lv${c.match}</td><td>Lv${c.sing}</td></tr>`)
     .join('');
   app.innerHTML = `
     <h1>기록</h1>
-    <div class="card"><h2>계이름별 적중률 (약점 확인)</h2><div class="grid">${rows}</div></div>
-    <div class="card"><h2>최근 연습</h2>
-      ${hist ? `<table><tr><th>날짜</th><th>레벨</th><th>적중</th></tr>${hist}</table>` : '<p class="sub">아직 기록이 없습니다.</p>'}
+    ${['match', 'interval', 'sing'].map(skillBlock).join('')}
+    <div class="card"><h2>점검 기록 (시작 레벨)</h2>
+      ${checks ? `<table><tr><th>날짜</th><th>음 간격</th><th>따라 부르기</th><th>시창</th></tr>${checks}</table>` : '<p class="sub">아직 점검 기록이 없습니다. 홈에서 레벨 진단을 해 보세요.</p>'}
     </div>
+    <div class="card"><h2>시창: 계이름별 적중률 (약점 확인)</h2><div class="grid">${rows}</div></div>
     <button id="back">홈으로</button>${footer}`;
   app.querySelector('#back').onclick = () => show(home);
 }
 
+
 /* ---------------------------------------------------------------- 음역 측정 */
-function rangeTest() {
+function rangeTest(after) {
   const result = { low: null, high: null };
   app.innerHTML = `
     <h1>음역 측정</h1>
@@ -146,7 +198,7 @@ function rangeTest() {
   const done = app.querySelector('#done');
   let mic = null;
   let raf = 0;
-  stopCurrent = () => { cancelAnimationFrame(raf); mic && mic.stop(); };
+  env.stop = () => { cancelAnimationFrame(raf); mic && mic.stop(); };
 
   async function measure(which) {
     try {
@@ -183,7 +235,8 @@ function rangeTest() {
     S.range = { low: result.low, high: result.high };
     S.rangeMeasured = true;
     save(S);
-    show(home);
+    if (typeof after === 'function') after();
+    else show(home);
   };
   app.querySelector('#back').onclick = () => show(home);
 }
@@ -207,9 +260,9 @@ function session() {
     <div class="score" id="score"></div>
     <div class="big" id="big"></div>
     <canvas id="trace"></canvas>
-    <p class="sub" id="msg">먼저 악보를 눈으로 읽어 보세요. 그 다음 "으뜸음 듣기"로 도를 귀에 새기고 시작합니다.</p>
+    <p class="sub" id="msg">먼저 악보를 눈으로 읽어 보세요. 그 다음 "음계·으뜸음 듣기"로 도를 귀에 새기고 시작합니다.</p>
     <div class="row" id="ctl">
-      <button id="tonic">으뜸음 듣기</button>
+      <button id="tonic">음계·으뜸음 듣기</button>
       <button class="primary" id="start">부르기 시작</button>
     </div>
     <div class="row" style="margin-top:10px"><button id="back" class="ghost">그만하기</button></div>
@@ -229,7 +282,7 @@ function session() {
   let mic = null;
   let raf = 0;
   let busy = false;
-  stopCurrent = () => { cancelAnimationFrame(raf); mic && mic.stop(); };
+  env.stop = () => { cancelAnimationFrame(raf); mic && mic.stop(); };
   q('#back').onclick = () => show(home);
 
   // y축: 으뜸음 기준 반음 수(-1 ~ 12). 같은 계이름이면 옥타브와 상관없이 같은 높이.
@@ -273,8 +326,8 @@ function session() {
     try {
       ensureCtx();
       await loadPiano();
-      const t = playCadence(key, beat);
-      q('#msg').textContent = '도-파-솔-도 … 마지막 소리가 으뜸음 "도"입니다. 머릿속에 남겨 두세요.';
+      const t = playIntro(key, beat);
+      q('#msg').textContent = '마지막에 홀로 울리는 소리가 으뜸음 "도"입니다. 머릿속에 남겨 두세요.';
       await sleep((t.end - ensureCtx().currentTime) * 1000);
     } catch {
       q('#msg').textContent = '피아노 소리를 불러오지 못했습니다.';
@@ -289,8 +342,8 @@ function session() {
       const ctx = ensureCtx();
       await loadPiano();
       mic = await startMic(ctx);
-      const cad = playCadence(key, beat);
-      q('#msg').textContent = '카덴스 → 카운트 → 노래하세요.';
+      const cad = playIntro(key, beat);
+      q('#msg').textContent = '기준음 → 카운트 → 노래하세요.';
       const t0 = cad.end + 0.2; // 카운트인 시작
       const singStart = t0 + 4 * beat;
       for (let i = 0; i < 4; i++) click(t0 + i * beat, i === 0, 0.5);
@@ -335,58 +388,30 @@ function session() {
   };
 
   function finish(frames, singStart) {
-    const results = mel.notes.map((n, i) => {
-      const target = midiOf(key, n.deg);
-      const from = singStart + (starts[i] + 0.3 * n.beats) * beat;
-      const to = singStart + (starts[i] + n.beats * 0.95) * beat;
-      const ds = frames
-        .filter((f) => f.t - S.latency >= from && f.t - S.latency <= to)
-        .map((f) => f.midi - target);
-      if (ds.length < 3) return { cents: null, oct: 0, state: 'miss' };
-      const raw = median(ds);
-      const oct = Math.round(raw / 12); // 0 = 올바른 옥타브, +1 = 한 옥타브 높게
-      const cents = Math.round((raw - 12 * oct) * 100);
-      const a = Math.abs(cents);
-      if (oct !== 0 && S.octaveStrict) return { cents, oct, state: 'miss' };
-      return { cents, oct, state: a <= 25 ? 'good' : a <= 50 ? 'ok' : 'miss' };
-    });
+    const results = scoreNotes(
+      frames,
+      mel.notes.map((n, i) => ({ target: midiOf(key, n.deg), start: starts[i], beats: n.beats })),
+      singStart, beat, S.latency, S.octaveStrict,
+    );
     results.forEach((r, i) => view.setResult(i, r.state));
     drawBase(0, frames, singStart);
 
-    const hits = results.filter((r) => r.state !== 'miss').length;
+    const hits = results.filter(isHit).length;
     const rate = hits / results.length;
     mel.notes.forEach((n, i) => {
       const name = degName(n.deg);
       const d = S.degree[name] || { n: 0, h: 0 };
       d.n++;
-      if (results[i].state !== 'miss') d.h++;
+      if (isHit(results[i])) d.h++;
       S.degree[name] = d;
     });
 
-    const before = S.level;
-    let note = '';
-    if (rate >= 0.8) {
-      S.streak++;
-      if (S.streak >= 2 && S.level < LEVELS.length) { S.level++; S.streak = 0; note = `🎉 2회 연속 성공! 레벨 ${S.level}로 올라갑니다.`; }
-      else if (S.level >= LEVELS.length) note = '최고 레벨에서 안정적입니다.';
-      else note = `성공! 한 번 더 성공하면 레벨이 올라갑니다. (${S.streak}/2)`;
-    } else if (rate < 0.5) {
-      S.streak = 0;
-      if (S.level > 1) { S.level--; note = `레벨 ${S.level}로 내려가 기초를 다집니다.`; }
-      else note = '천천히 다시 해 봐요. 으뜸음 듣기를 충분히 활용하세요.';
-    } else {
-      S.streak = 0;
-      note = '거의 다 왔어요. 같은 레벨에서 다시 도전합니다.';
-    }
-    S.history.push({ t: Date.now(), level: before, rate });
-    S.history = S.history.slice(-300);
+    const note = advance(S, 'sing', rate);
     save(S);
 
     const rows = mel.notes.map((n, i) => {
       const r = results[i];
-      const octTxt = r.oct ? ` · 옥타브 ${r.oct > 0 ? '높음' : '낮음'}` : '';
-      const c = r.cents === null ? '소리 없음' : `${r.cents > 0 ? '+' : ''}${r.cents}¢ ${r.cents > 0 ? '(높음)' : r.cents < 0 ? '(낮음)' : ''}${octTxt}`;
-      return `<tr><td>${i + 1}</td><td>${degName(n.deg)}</td><td class="${r.state === 'miss' ? 'bad' : 'good'}">${c}</td></tr>`;
+      return `<tr><td>${i + 1}</td><td>${degName(n.deg)}</td><td class="${isHit(r) ? 'good' : 'bad'}">${centsText(r)}</td></tr>`;
     }).join('');
     q('#msg').innerHTML = `<b>${hits}/${results.length} 적중 (${Math.round(rate * 100)}%)</b><br>${note}`;
     const panel = document.createElement('div');
@@ -416,6 +441,11 @@ function playCadence(key, beat) {
   return { end: t0 + 6 * beat };
 }
 
+// 시창 시작 전 기준음: 기본은 음계 + 으뜸음, 설정에서 화음 진행(카덴스)으로 바꿀 수 있다.
+function playIntro(key, beat) {
+  return S.intro === 'cadence' ? playCadence(key, beat) : playScale(key);
+}
+
 function playMelody(mel, key, when, beat) {
   let t = when;
   mel.notes.forEach((n) => {
@@ -428,4 +458,6 @@ function playMelody(mel, key, when, beat) {
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {});
 }
+env.home = home;
+env.rangeTest = rangeTest;
 show(home);

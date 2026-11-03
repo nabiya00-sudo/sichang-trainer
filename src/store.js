@@ -11,6 +11,14 @@ const DEFAULTS = {
   degree: {}, // { '도': { n, h } } hit statistics per solfege syllable
   history: [], // { t, level, rate }
   seenLevels: [1],
+  // v0.2: 기술별 레벨(시창은 level/streak 를 그대로 사용)
+  match: { level: 1, streak: 0 },
+  interval: { level: 1, streak: 0 },
+  placed: false, // 레벨 진단을 마쳤는지
+  lastCheck: 0,
+  sinceCheck: 0, // 마지막 점검 이후 연습 횟수
+  checks: [], // 점검 기록
+  intro: 'scale', // 시창 도입: 'scale'(음계) | 'cadence'(화음 진행)
 };
 
 export function load() {

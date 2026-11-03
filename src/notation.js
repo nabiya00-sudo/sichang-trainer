@@ -23,6 +23,34 @@ export function vexKey(key, deg) {
 }
 
 const DUR = { 1: 'q', 2: 'h' };
+const SHARP_NAMES = ['c', 'c#', 'd', 'd#', 'e', 'f', 'f#', 'g', 'g#', 'a', 'a#', 'b'];
+
+// 두 음(MIDI)을 높은음자리표 한 마디에 그린다. 음 간격 맞히기 정답 확인용.
+export function renderPair(el, midis) {
+  el.innerHTML = '';
+  const renderer = new Renderer(el, Renderer.Backends.SVG);
+  renderer.resize(320, 130);
+  const ctx = renderer.getContext();
+  const stave = new Stave(10, 20, 300);
+  stave.addClef('treble');
+  stave.setContext(ctx).draw();
+  const notes = midis.map((m) => {
+    const name = SHARP_NAMES[((m % 12) + 12) % 12];
+    const n = new StaveNote({ keys: [`${name}/${Math.floor(m / 12) - 1}`], duration: 'q' });
+    if (name.includes('#')) n.addModifier(new Accidental('#'), 0);
+    return n;
+  });
+  const voice = new Voice({ numBeats: 2, beatValue: 4 }).addTickables(notes);
+  new Formatter().joinVoices([voice]).format([voice], 180);
+  voice.draw(ctx, stave);
+  const svg = el.querySelector('svg');
+  svg.setAttribute('viewBox', '0 0 320 130');
+  svg.removeAttribute('width');
+  svg.removeAttribute('height');
+  svg.style.width = '100%';
+  svg.style.maxWidth = '420px';
+  svg.style.height = 'auto';
+}
 
 // Draws the melody into `el` and returns helpers to highlight and colour single notes.
 export function renderScore(el, mel, key) {
