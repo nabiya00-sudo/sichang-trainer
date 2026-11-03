@@ -1,7 +1,7 @@
 import './style.css';
 import { load, save, exportJson, importJson } from './store.js';
 import { ensureCtx, loadPiano, playNote, playChord, click } from './audio.js';
-import { startMic, midiName, median, foldedDiff } from './pitch.js';
+import { startMic, midiName, median } from './pitch.js';
 import { LEVELS, generate, chooseKey, midiOf, degName, SOLFEGE } from './melody.js';
 import { renderScore } from './notation.js';
 import { TERMS, termsUpTo, termsAt } from './terms.js';
@@ -50,6 +50,10 @@ function home() {
       <input type="range" id="tempo" min="44" max="100" value="${S.tempo}" />
       <label>마이크 지연 보정: <b id="lv">${Math.round(S.latency * 1000)}</b> ms (결과가 계속 늦게/빨리 나오면 조정)</label>
       <input type="range" id="lat" min="0" max="400" step="10" value="${Math.round(S.latency * 1000)}" />
+      <label style="display:flex;gap:10px;align-items:center;color:var(--text)">
+        <input type="checkbox" id="oct" ${S.octaveStrict ? 'checked' : ''} style="width:22px;height:22px" />
+        옥타브까지 정확히 채점 (내 음역에서 부르기, 권장)
+      </label>
       <div class="row" style="margin-top:12px">
         <button id="exp" class="ghost">기록 백업(내보내기)</button>
         <button id="imp" class="ghost">백업 불러오기</button>
@@ -70,6 +74,10 @@ function home() {
   app.querySelector('#lat').oninput = (e) => {
     S.latency = +e.target.value / 1000;
     app.querySelector('#lv').textContent = e.target.value;
+    save(S);
+  };
+  app.querySelector('#oct').onchange = (e) => {
+    S.octaveStrict = e.target.checked;
     save(S);
   };
   app.querySelector('#exp').onclick = () => {
@@ -333,11 +341,14 @@ function session() {
       const to = singStart + (starts[i] + n.beats * 0.95) * beat;
       const ds = frames
         .filter((f) => f.t - S.latency >= from && f.t - S.latency <= to)
-        .map((f) => foldedDiff(f.midi, target));
-      if (ds.length < 3) return { cents: null, state: 'miss' };
-      const cents = Math.round(median(ds) * 100);
+        .map((f) => f.midi - target);
+      if (ds.length < 3) return { cents: null, oct: 0, state: 'miss' };
+      const raw = median(ds);
+      const oct = Math.round(raw / 12); // 0 = 올바른 옥타브, +1 = 한 옥타브 높게
+      const cents = Math.round((raw - 12 * oct) * 100);
       const a = Math.abs(cents);
-      return { cents, state: a <= 25 ? 'good' : a <= 50 ? 'ok' : 'miss' };
+      if (oct !== 0 && S.octaveStrict) return { cents, oct, state: 'miss' };
+      return { cents, oct, state: a <= 25 ? 'good' : a <= 50 ? 'ok' : 'miss' };
     });
     results.forEach((r, i) => view.setResult(i, r.state));
     drawBase(0, frames, singStart);
@@ -373,14 +384,15 @@ function session() {
 
     const rows = mel.notes.map((n, i) => {
       const r = results[i];
-      const c = r.cents === null ? '소리 없음' : `${r.cents > 0 ? '+' : ''}${r.cents}¢ ${r.cents > 0 ? '(높음)' : r.cents < 0 ? '(낮음)' : ''}`;
+      const octTxt = r.oct ? ` · 옥타브 ${r.oct > 0 ? '높음' : '낮음'}` : '';
+      const c = r.cents === null ? '소리 없음' : `${r.cents > 0 ? '+' : ''}${r.cents}¢ ${r.cents > 0 ? '(높음)' : r.cents < 0 ? '(낮음)' : ''}${octTxt}`;
       return `<tr><td>${i + 1}</td><td>${degName(n.deg)}</td><td class="${r.state === 'miss' ? 'bad' : 'good'}">${c}</td></tr>`;
     }).join('');
     q('#msg').innerHTML = `<b>${hits}/${results.length} 적중 (${Math.round(rate * 100)}%)</b><br>${note}`;
     const panel = document.createElement('div');
     panel.innerHTML = `
       <div class="card"><table><tr><th>음</th><th>계이름</th><th>음정 차이</th></tr>${rows}</table>
-      <p class="sub">±25¢ 이내 초록 · ±50¢ 이내 노랑 · 그 밖 빨강 (100¢ = 반음, 옥타브는 무시)</p></div>
+      <p class="sub">±25¢ 이내 초록 · ±50¢ 이내 노랑 · 그 밖 빨강 (100¢ = 반음, ${S.octaveStrict ? '옥타브가 다르면 빨강' : '옥타브는 무시'})</p></div>
       <div class="row"><button id="hear">정답 듣기</button><button class="primary" id="next">다음 문제</button></div>`;
     q('#ctl').remove(); // 시작 버튼 줄 제거
     q('#msg').after(panel);

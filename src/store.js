@@ -6,6 +6,7 @@ const DEFAULTS = {
   level: 1,
   streak: 0,
   tempo: 60,
+  octaveStrict: true, // 시창은 내 음역의 옥타브에서 불러야 정답
   latency: 0.15, // seconds between a sung sound and the mic frame that reports it
   degree: {}, // { '도': { n, h } } hit statistics per solfege syllable
   history: [], // { t, level, rate }
